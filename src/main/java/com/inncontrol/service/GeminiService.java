@@ -30,15 +30,13 @@ public class GeminiService {
                 .contents(List.of(
                         GeminiRequest.Content.builder()
                                 .parts(List.of(
-                                        GeminiRequest.Part.builder().text(prompt).build()
-                                ))
-                                .build()
-                ))
+                                        GeminiRequest.Part.builder().text(prompt).build()))
+                                .build()))
                 .build();
 
         try {
             GeminiResponse response = restTemplate.postForObject(API_URL + finalKey, request, GeminiResponse.class);
-            
+
             if (response != null && response.getCandidates() != null && !response.getCandidates().isEmpty()) {
                 return response.getCandidates().get(0).getContent().getParts().get(0).getText();
             }
