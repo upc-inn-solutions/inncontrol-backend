@@ -241,46 +241,9 @@ public class MessageService {
         User user = userRepository.findById(userId).orElseThrow();
         
 
-            // Solo se puede eliminar para todos si eres el remitente y ha pasado menos de 1 hora
-            if (msg.getSender().getId().equals(userId)) {
-            // 
-                java.time.Duration duration = java.time.Duration.between(msg.getCreatedAt(), java.time.LocalDateTime.now());
-                if (duration.toHours() < 1) {
-                        
-                    msg.setContent("Mensaje eliminado");
-                    msg.setType("DELETED");
-                    messageRepository.save(msg);
-                    return;
-                }
-            }
-        }
-        
-
         msg.getDeletedBy().add(user);
         messageRepository.save(msg);
     }
-
-    @Transactional
-    public void togglePinMessage(Long messageId) {
-        Message msg = messageRepository.findById(messageId).orElseThrow();
-        boolean newState = !Boolean.TRUE.equals(msg.getPinned());
-        
-
-        if (newState) {
-            List<Message> history;
-            if (msg.getGroup() != null) {
-                history = messageRepository.findByGroupOrderByCreatedAtAsc(msg.getGroup());
-            } else {
-                history = messageRepository.findChatHistory(msg.getSender(), msg.getReceiver());
-            }
-            for (Message m : history) {
-                if (Boolean.TRUE.equals(m.getPinned())) {
-                    m.setPinned(false);
-                    messageRepository.save(m);
-                }
-            }
-        }
-        
 
         messageRepository.save(msg);
     }
@@ -312,7 +275,7 @@ public class MessageService {
     public void markGroupAsRead(Long groupId, Long userId) {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User user = userRepository.findById(userId).orElseThrow();
-        
+        List<Message> unread = messageRepository.findUnreadGroupMessages(group, user);
 
         for (Message m : unread) {
             m.getReadBy().add(user);
@@ -332,8 +295,7 @@ public class MessageService {
                         .isGroup(isGroup)
                         .pinned(false)
                         .build());
-        
-
+        pref.setPinned(!pref.isPinned());
         preferenceRepository.save(pref);
     }
 
@@ -351,13 +313,9 @@ public class MessageService {
         } else {
             User user1 = userRepository.findById(userId).orElseThrow();
             User user2 = userRepository.findById(contactId).orElseThrow();
-            List<Message> history = messageRepository.findChatHistory(user1, user2);
-            
-
+            for (Message m : history) {
                 m.getDeletedBy().add(user1);
-                // Si ambos usuarios han borrado el mensaje, se borra de la DB para optimizar espacio
                 if (m.getDeletedBy().size() >= 2) {
-                // 
                     messageRepository.delete(m);
                 } else {
                     messageRepository.save(m);
@@ -421,51 +379,23 @@ public class MessageService {
                 .sorted(Comparator.comparing(com.inncontrol.dto.GroupMemberDTO::getName))
                 .collect(Collectors.toList());
     }
-
     public ChatGroup createGroup(String name, String description, String photo, List<Long> memberIds, Long creatorId) {
         User creator = userRepository.findById(creatorId).orElseThrow();
         List<User> members = userRepository.findAllById(memberIds);
         if (!members.contains(creator)) members.add(creator);
 
-            
-        // Safety check for photo size
-        if (photo != null && photo.length() > 1024 * 1024) {
-            throw new RuntimeException("La imagen del grupo es demasiado grande (máximo 1MB)");
-        }
-
-        ChatGroup group = ChatGroup.builder()
+        ChatGroup savedGroup = groupRepository.save(ChatGroup.builder()
                 .name(name)
                 .description(description)
                 .photo(photo)
                 .creator(creator)
                 .members(new java.util.HashSet<>(members))
                 .admins(new java.util.HashSet<>(java.util.List.of(creator)))
-                .build();
-        
+                .build());
 
-        
-        // Mensaje de sistema: Creación del grupo
-        Message creationMsg = Message.builder()
-                .sender(creator)
-                .receiver(creator) // TRUCO: Cumplir con la base de datos
-                .group(savedGroup)
-                .content("SYSTEM_GROUP_CREATED")
-                .type("SYSTEM")
-                .build();
-        messageRepository.save(creationMsg);
-
-        // Mensajes de sistema: Integrantes añadidos
-        for (User member : members) {
-            if (!member.getId().equals(creatorId)) {
-                Message addedMsg = Message.builder()
-                        .sender(creator)
-                        .receiver(member)
-                        .group(savedGroup)
-                        .content("SYSTEM_MEMBER_ADDED:" + member.getName())
-                        .type("SYSTEM")
-                        .build();
-                messageRepository.save(addedMsg);
-            }
+        // Safety check for photo size
+        if (photo != null && photo.length() > 1024 * 1024) {
+            throw new RuntimeException("La imagen del grupo es demasiado grande (máximo 1MB)");
         }
 
         return savedGroup;
@@ -478,8 +408,7 @@ public class MessageService {
         
 
         boolean isAdmin = group.getAdmins().contains(requester) || 
-                          (group.getCreator() != null && group.get
-                
+                          (group.getCreator() != null && group.getCreator().getId().equals(requesterId));
         if (!isAdmin) {
             throw new RuntimeException("Solo el administrador puede eliminar el grupo");
         }
@@ -516,7 +445,8 @@ public class MessageService {
 
         // Asegurar que el chat se mantenga en la lista con la actividad del mensaje de salida
         updateLastActivity(user, groupId, true, java.time.LocalDateTime.now());
-        // 
+        group.getMembers().remove(user);
+        group.getAdmins().remove(user);
 
         boolean isCreator = group.getCreator() != null && group.getCreator().getId().equals(userId);
         
@@ -550,21 +480,17 @@ public class MessageService {
             groupRepository.save(group);
         }
     }
-    @
 
+    @Transactional
     public void removeFromGroup(Long groupId, Long memberId, Long adminId) {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User admin = userRepository.findById(adminId).orElseThrow();
-        
-
         boolean isAdmin = group.getAdmins().contains(admin) || 
-                          (group.getCreator() != null && group
-                
+                          (group.getCreator() != null && group.getCreator().getId().equals(adminId));
         if (!isAdmin) {
             throw new RuntimeException("Solo los administradores pueden eliminar miembros");
         }
-        
-
+        if (memberId.equals(adminId)) {
             throw new RuntimeException("No puedes eliminarte a ti mismo. Usa 'Salir del grupo'.");
         }
 
@@ -622,8 +548,7 @@ public class MessageService {
         
 
         boolean isRequesterAdmin = group.getAdmins().contains(requester) || 
-                                 (group.getCreator() != null && group.getCr
-                
+                                 (group.getCreator() != null && group.getCreator().getId().equals(adminId));
         if (!isRequesterAdmin) {
             throw new RuntimeException("Solo los administradores pueden nombrar nuevos administradores");
         }
@@ -654,8 +579,8 @@ public class MessageService {
         User requester = userRepository.findById(adminId).orElseThrow();
         
 
-                                 (group.getCreator() != null && group.getCr
-                
+        boolean isRequesterAdmin = group.getAdmins().contains(requester) || 
+                                 (group.getCreator() != null && group.getCreator().getId().equals(adminId));
         if (!isRequesterAdmin) {
             throw new RuntimeException("Solo los administradores pueden degradar a otros");
         }
@@ -679,7 +604,7 @@ public class MessageService {
 
         groupRepository.save(group);
     }
-    p
+    private void createOrUpdateTaskMessage(User sender, User receiver, String content, java.time.LocalDateTime now, String taskIdPattern) {
 
         java.util.List<Message> msgs = messageRepository.findExistingTaskMessages(sender.getId(), receiver.getId(),
             taskIdPattern);
@@ -691,11 +616,9 @@ public class MessageService {
             msg.setCreatedAt(now);
             msg.setRead(false);
             if (msg.getReadBy() != null) msg.getReadBy().clear();
-            if (msg.getDeletedBy() != nu
-                l) msg.getDeletedBy().clear();
+            if (msg.getDeletedBy() != null) msg.getDeletedBy().clear();
             
-                
-
+            if (msgs.size() > 1) {
                 messageRepository.deleteAll(msgs.subList(1, msgs.size()));
             }
         } else {
@@ -728,8 +651,8 @@ public class MessageService {
             
         String content = String.format("TASK_EVENT|%s|%d|%s|%s|%s", 
             actionType, task.getId(), task.getTitle(), 
-                (task.getAssignedTo() != null ? task.getAs
-                task.getPriority().name());
+            (task.getAssignedTo() != null ? task.getAssignedTo().getName() : "Sin asignar"),
+            task.getPriority().name());
                 
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
         String taskIdPattern = "%|" + task.getId() + "|%";
@@ -741,10 +664,9 @@ public class MessageService {
 
         // Notify Employee if assigned, not the actor, and not the manager (already checked)
         if (task.getAssignedTo() != null && 
-        // 
-            !task.getAssignedTo().getId().e
-                !task.getAssignedTo().getId().equals(manager.get
-                createOrUpdateTaskMessage(systemUser, task.getAssignedTo(), content, now, taskIdPattern);
+            !task.getAssignedTo().getId().equals(actorId) &&
+            !task.getAssignedTo().getId().equals(manager.getId())) {
+            createOrUpdateTaskMessage(systemUser, task.getAssignedTo(), content, now, taskIdPattern);
         }
     }
 
@@ -766,14 +688,11 @@ public class MessageService {
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDateTime();
 
-        int unreadMessages = (int) (messageRepository.countTotalUnreadPrivateMessagesSince(userId, lastVisitedM) + 
-                                   messageRepository.countTotalUnreadGroupMessagesSince(userId, user, lastVisitedM
-                
-
-                userId, TaskStatus.PENDIENTE, lastVisitedT);
+        int unreadMessages = (int) (messageRepository.countTotalUnreadPrivateMessagesSince(userId, lastVisitedMessages) + 
+                                   messageRepository.countTotalUnreadGroupMessagesSince(userId, user, lastVisitedMessages));
+        int newTasks = (int) taskRepository.countNewTasksSince(userId, TaskStatus.PENDIENTE, lastVisitedTasks);
         
-
-        badges.put("messages", unreadMessages);
+        java.util.Map<String, Integer> badges = new java.util.HashMap<>();
         badges.put("tasks", newTasks);
         return badges;
     }
