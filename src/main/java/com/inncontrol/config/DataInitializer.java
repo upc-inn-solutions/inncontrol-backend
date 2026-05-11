@@ -39,7 +39,19 @@ public class DataInitializer implements CommandLineRunner {
         userRepository.flush();
         */
 
-        if (userRepository.count() > 0) {
+        // Asegurarse de que el Asistente siempre exista
+        if (userRepository.findByName("InnControl Assistant").isEmpty()) {
+            System.out.println("🤖 Creando InnControl Assistant...");
+            User assistant = User.builder()
+                    .name("InnControl Assistant")
+                    .email("assistant@inncontrol.com")
+                    .password(passwordEncoder.encode("system-pass-ai-2026"))
+                    .role(Role.ROLE_GERENTE) // Rol de sistema
+                    .build();
+            userRepository.save(assistant);
+        }
+
+        if (userRepository.count() > 1) { // 1 because of the assistant we just checked/created
             System.out.println("✅ Base de datos detectada con datos. Saltando inicialización demo.");
             return;
         }
