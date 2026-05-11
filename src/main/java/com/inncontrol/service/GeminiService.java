@@ -15,7 +15,7 @@ public class GeminiService {
     @Value("${application.security.ai.gemini-key}")
     private String apiKey;
 
-    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=";
+    private static final String API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-flash-latest:generateContent?key=";
 
     private final RestTemplate restTemplate = new RestTemplate();
 
