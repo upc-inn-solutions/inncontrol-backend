@@ -245,11 +245,7 @@ public class MessageService {
         messageRepository.save(msg);
     }
 
-        messageRepository.save(msg);
-    }
-
-    @Transactional
-    public void deleteMessages(List<Long> messageIds, Long userId) {
+    @Transactional    public void deleteMessages(List<Long> messageIds, Long userId) {
         for (Long id : messageIds) {
             deleteMessage(id, userId, false);
         }
@@ -286,6 +282,30 @@ public class MessageService {
     }
 
     @Transactional
+    public void togglePinMessage(Long messageId) {
+        Message msg = messageRepository.findById(messageId).orElseThrow();
+        boolean newState = !Boolean.TRUE.equals(msg.getPinned());
+        
+        if (newState) {
+            List<Message> history;
+            if (msg.getGroup() != null) {
+                history = messageRepository.findByGroupOrderByCreatedAtAsc(msg.getGroup());
+            } else {
+                history = messageRepository.findChatHistory(msg.getSender(), msg.getReceiver());
+            }
+            for (Message m : history) {
+                if (Boolean.TRUE.equals(m.getPinned())) {
+                    m.setPinned(false);
+                    messageRepository.save(m);
+                }
+            }
+        }
+        
+        msg.setPinned(newState);
+        messageRepository.save(msg);
+    }
+
+    @Transactional
     public void togglePin(Long userId, Long contactId, boolean isGroup) {
         User user = userRepository.findById(userId).orElseThrow();
         UserChatPreference pref = preferenceRepository.findByUserAndContactIdAndIsGroup(user, contactId, isGroup)
@@ -313,6 +333,7 @@ public class MessageService {
         } else {
             User user1 = userRepository.findById(userId).orElseThrow();
             User user2 = userRepository.findById(contactId).orElseThrow();
+            List<Message> history = messageRepository.findChatHistory(user1, user2);
             for (Message m : history) {
                 m.getDeletedBy().add(user1);
                 if (m.getDeletedBy().size() >= 2) {
@@ -586,14 +607,13 @@ public class MessageService {
         }
 
         User targetMember = userRepository.findById(memberId).orElseThrow();
-        
-
+        if (group.getCreator() != null && group.getCreator().getId().equals(targetMember.getId())) {
             throw new RuntimeException("No se puede quitar el rango de administrador al creador");
         }
 
         group.getAdmins().remove(targetMember);
         
-
+        Message sysMsg = Message.builder()
                 .sender(requester)
                 .receiver(targetMember)
                 .group(group)
@@ -678,21 +698,21 @@ public class MessageService {
 
     public java.util.Map<String, Integer> getNotificationBadges(Long userId, Long lastVisitedTasks, Long lastVisitedMessages) {
         User user = userRepository.findById(userId).orElseThrow();
-            
         
-
+        java.time.LocalDateTime lastVisitedT = java.time.Instant.ofEpochMilli(lastVisitedTasks)
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDateTime();
-        
-
+                
+        java.time.LocalDateTime lastVisitedM = java.time.Instant.ofEpochMilli(lastVisitedMessages)
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDateTime();
 
-        int unreadMessages = (int) (messageRepository.countTotalUnreadPrivateMessagesSince(userId, lastVisitedMessages) + 
-                                   messageRepository.countTotalUnreadGroupMessagesSince(userId, user, lastVisitedMessages));
-        int newTasks = (int) taskRepository.countNewTasksSince(userId, TaskStatus.PENDIENTE, lastVisitedTasks);
+        int unreadMessages = (int) (messageRepository.countTotalUnreadPrivateMessagesSince(userId, lastVisitedM) + 
+                                   messageRepository.countTotalUnreadGroupMessagesSince(userId, user, lastVisitedM));
+        int newTasks = (int) taskRepository.countByAssignedToIdAndStatusAndCreatedAtGreaterThan(userId, TaskStatus.PENDIENTE, lastVisitedT);
         
         java.util.Map<String, Integer> badges = new java.util.HashMap<>();
+        badges.put("messages", unreadMessages);
         badges.put("tasks", newTasks);
         return badges;
     }
