@@ -41,15 +41,19 @@ public class MessageService {
 
             for (User other : otherUsers) {
                 Optional<Message> lastMsg = messageRepository.findLastMessage(userId, other.getId());
-                UserChatPreference pref = preferenceRepository.findByUserAndContactIdAndIsGroup(currentUser, other.getId(), false)
+                UserChatPreference pref = preferenceRepository
+                        .findByUserAndContactIdAndIsGroup(currentUser, other.getId(), false)
                         .orElse(null);
                 boolean isPinned = pref != null && pref.isPinned();
 
-                // Show if has messages OR has a preference record (e.g. pinned or manually kept)
+                // Show if has messages OR has a preference record (e.g. pinned or manually
+                // kept)
                 if (searchTerm == null || searchTerm.isEmpty()) {
-                    if (lastMsg.isEmpty() && pref == null) continue;
+                    if (lastMsg.isEmpty() && pref == null)
+                        continue;
                 } else {
-                    if (!other.getName().toLowerCase().contains(searchTerm.toLowerCase())) continue;
+                    if (!other.getName().toLowerCase().contains(searchTerm.toLowerCase()))
+                        continue;
                 }
 
                 conversations.add(ConversationDTO.builder()
@@ -59,8 +63,8 @@ public class MessageService {
                         .contactRole(other.getRole().name())
                         .lastMessage(lastMsg.map(Message::getContent).orElse(""))
                         .lastMessageTime(lastMsg.map(m -> m.getCreatedAt().toString()).orElse(
-                            pref != null && pref.getLastActivityAt() != null ? pref.getLastActivityAt().toString() : "2000-01-01T00:00:00"
-                        ))
+                                pref != null && pref.getLastActivityAt() != null ? pref.getLastActivityAt().toString()
+                                        : "2000-01-01T00:00:00"))
                         .lastMessageRead(lastMsg.map(Message::isRead).orElse(true))
                         .lastMessageIsFromMe(lastMsg.map(m -> m.getSender().getId().equals(userId)).orElse(false))
                         .group(false)
@@ -71,27 +75,32 @@ public class MessageService {
 
             // 2. Get Group Chats (Members + Left but have preferences)
             java.util.List<ChatGroup> activeGroups = groupRepository.findByMembersContaining(currentUser);
-            java.util.List<UserChatPreference> groupPrefs = preferenceRepository.findByUserAndIsGroup(currentUser, true);
-            
+            java.util.List<UserChatPreference> groupPrefs = preferenceRepository.findByUserAndIsGroup(currentUser,
+                    true);
+
             java.util.Set<ChatGroup> allGroups = new java.util.HashSet<>(activeGroups);
             for (UserChatPreference p : groupPrefs) {
                 groupRepository.findById(p.getContactId()).ifPresent(allGroups::add);
             }
 
             for (ChatGroup group : allGroups) {
-                // Si el grupo está eliminado, sólo lo mostramos si el usuario NO ha borrado el chat (existe preferencia)
+                // Si el grupo está eliminado, sólo lo mostramos si el usuario NO ha borrado el
+                // chat (existe preferencia)
                 if (group.isDeleted()) {
-                    if (preferenceRepository.findByUserAndContactIdAndIsGroup(currentUser, group.getId(), true).isEmpty()) {
+                    if (preferenceRepository.findByUserAndContactIdAndIsGroup(currentUser, group.getId(), true)
+                            .isEmpty()) {
                         continue;
                     }
                 }
 
                 if (searchTerm != null && !searchTerm.isEmpty()) {
-                    if (!group.getName().toLowerCase().contains(searchTerm.toLowerCase())) continue;
+                    if (!group.getName().toLowerCase().contains(searchTerm.toLowerCase()))
+                        continue;
                 }
 
                 Optional<Message> lastMsg = messageRepository.findLastGroupMessage(group.getId(), userId);
-                UserChatPreference pref = preferenceRepository.findByUserAndContactIdAndIsGroup(currentUser, group.getId(), true)
+                UserChatPreference pref = preferenceRepository
+                        .findByUserAndContactIdAndIsGroup(currentUser, group.getId(), true)
                         .orElse(null);
                 boolean isPinned = pref != null && pref.isPinned();
 
@@ -102,10 +111,11 @@ public class MessageService {
                         .contactRole("GRUPO")
                         .lastMessage(lastMsg.map(Message::getContent).orElse(""))
                         .lastMessageTime(lastMsg.map(m -> m.getCreatedAt().toString()).orElse(
-                            pref != null && pref.getLastActivityAt() != null ? pref.getLastActivityAt().toString() : 
-                            (group.getCreatedAt() != null ? group.getCreatedAt().toString() : "2000-01-01T00:00:00")
-                        ))
-                        .lastMessageRead(lastMsg.map(m -> m.getSender().getId().equals(userId) || m.getReadBy().stream().anyMatch(u -> u.getId().equals(userId))).orElse(true))
+                                pref != null && pref.getLastActivityAt() != null ? pref.getLastActivityAt().toString()
+                                        : (group.getCreatedAt() != null ? group.getCreatedAt().toString()
+                                                : "2000-01-01T00:00:00")))
+                        .lastMessageRead(lastMsg.map(m -> m.getSender().getId().equals(userId)
+                                || m.getReadBy().stream().anyMatch(u -> u.getId().equals(userId))).orElse(true))
                         .lastMessageIsFromMe(lastMsg.map(m -> m.getSender().getId().equals(userId)).orElse(false))
                         .group(true)
                         .pinned(isPinned)
@@ -137,7 +147,7 @@ public class MessageService {
         User u1 = userRepository.findById(userId1).orElseThrow();
         User u2 = userRepository.findById(userId2).orElseThrow();
         List<Message> history = messageRepository.findChatHistory(u1, u2);
-        
+
         // Filtrar mensajes que el usuario ha borrado para sí mismo
         return history.stream()
                 .filter(m -> m.getDeletedBy().stream().noneMatch(u -> u.getId().equals(userId1)))
@@ -147,7 +157,7 @@ public class MessageService {
     public List<Message> getGroupHistory(Long groupId, Long userId) {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         List<Message> history = messageRepository.findByGroupOrderByCreatedAtAsc(group);
-        
+
         return history.stream()
                 .filter(m -> m.getDeletedBy().stream().noneMatch(u -> u.getId().equals(userId)))
                 .collect(Collectors.toList());
@@ -174,22 +184,24 @@ public class MessageService {
         } else {
             User receiver = userRepository.findById(receiverId).orElseThrow();
             builder.receiver(receiver);
-            // Asegurar que la conversación se quede en la lista aunque se vacíe el historial después
+            // Asegurar que la conversación se quede en la lista aunque se vacíe el
+            // historial después
             ensurePreferenceExists(sender, receiver.getId(), false);
             ensurePreferenceExists(receiver, sender.getId(), false);
         }
 
         Message savedMsg = messageRepository.save(builder.build());
-        
+
         // Notificar vía WebSocket
         if (groupId != null) {
             messagingTemplate.convertAndSend("/topic/group/" + groupId, savedMsg);
         } else {
             messagingTemplate.convertAndSendToUser(receiverId.toString(), "/queue/messages", savedMsg);
-            // También notificar al sender (para que sepa que llegó al server si lo necesita, aunque ya lo tiene)
+            // También notificar al sender (para que sepa que llegó al server si lo
+            // necesita, aunque ya lo tiene)
             messagingTemplate.convertAndSendToUser(senderId.toString(), "/queue/messages", savedMsg);
         }
-        
+
         // Actualizar última actividad para el ordenamiento de la lista
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
         if (groupId != null) {
@@ -205,14 +217,15 @@ public class MessageService {
         // RESPUESTA AUTOMÁTICA SI ES EL ASISTENTE
         User receiver = groupId != null ? null : userRepository.findById(receiverId).orElse(null);
         if (receiver != null && "InnControl Assistant".equals(receiver.getName())) {
-            // Ejecutar respuesta de IA de forma asíncrona (opcional, aquí lo haremos secuencial por simplicidad pero notificando via WS)
+            // Ejecutar respuesta de IA de forma asíncrona (opcional, aquí lo haremos
+            // secuencial por simplicidad pero notificando via WS)
             try {
                 com.inncontrol.dto.ChatRequest aiRequest = new com.inncontrol.dto.ChatRequest();
                 aiRequest.setMessage(content);
                 aiRequest.setSenderId(senderId);
                 com.inncontrol.dto.ChatResponse aiResponse = chatbotService.processMessage(aiRequest);
                 
-                // Enviar respuesta del asistente de vuelta
+
                 sendMessage(receiverId, senderId, null, aiResponse.getReply(), null);
             } catch (Exception e) {
                 System.err.println("ERROR al procesar respuesta de IA: " + e.getMessage());
@@ -227,11 +240,13 @@ public class MessageService {
         Message msg = messageRepository.findById(messageId).orElseThrow();
         User user = userRepository.findById(userId).orElseThrow();
         
-        if (forEveryone) {
+
             // Solo se puede eliminar para todos si eres el remitente y ha pasado menos de 1 hora
             if (msg.getSender().getId().equals(userId)) {
+            // 
                 java.time.Duration duration = java.time.Duration.between(msg.getCreatedAt(), java.time.LocalDateTime.now());
                 if (duration.toHours() < 1) {
+                        
                     msg.setContent("Mensaje eliminado");
                     msg.setType("DELETED");
                     messageRepository.save(msg);
@@ -240,7 +255,7 @@ public class MessageService {
             }
         }
         
-        // Por defecto o si no se puede para todos, se marca como borrado para mí
+
         msg.getDeletedBy().add(user);
         messageRepository.save(msg);
     }
@@ -250,7 +265,7 @@ public class MessageService {
         Message msg = messageRepository.findById(messageId).orElseThrow();
         boolean newState = !Boolean.TRUE.equals(msg.getPinned());
         
-        // Si vamos a fijar, primero desfijamos otros en el mismo contexto
+
         if (newState) {
             List<Message> history;
             if (msg.getGroup() != null) {
@@ -266,7 +281,7 @@ public class MessageService {
             }
         }
         
-        msg.setPinned(newState);
+
         messageRepository.save(msg);
     }
 
@@ -298,7 +313,7 @@ public class MessageService {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User user = userRepository.findById(userId).orElseThrow();
         
-        List<Message> unread = messageRepository.findUnreadGroupMessages(group, user);
+
         for (Message m : unread) {
             m.getReadBy().add(user);
         }
@@ -318,7 +333,7 @@ public class MessageService {
                         .pinned(false)
                         .build());
         
-        pref.setPinned(!pref.isPinned());
+
         preferenceRepository.save(pref);
     }
 
@@ -338,10 +353,11 @@ public class MessageService {
             User user2 = userRepository.findById(contactId).orElseThrow();
             List<Message> history = messageRepository.findChatHistory(user1, user2);
             
-            for (Message m : history) {
+
                 m.getDeletedBy().add(user1);
                 // Si ambos usuarios han borrado el mensaje, se borra de la DB para optimizar espacio
                 if (m.getDeletedBy().size() >= 2) {
+                // 
                     messageRepository.delete(m);
                 } else {
                     messageRepository.save(m);
@@ -401,6 +417,7 @@ public class MessageService {
                         .photo(u.getPhoto())
                         .isAdmin(group.getAdmins().contains(u) || (group.getCreator() != null && group.getCreator().getId().equals(u.getId())))
                         .build())
+                                
                 .sorted(Comparator.comparing(com.inncontrol.dto.GroupMemberDTO::getName))
                 .collect(Collectors.toList());
     }
@@ -410,6 +427,7 @@ public class MessageService {
         List<User> members = userRepository.findAllById(memberIds);
         if (!members.contains(creator)) members.add(creator);
 
+            
         // Safety check for photo size
         if (photo != null && photo.length() > 1024 * 1024) {
             throw new RuntimeException("La imagen del grupo es demasiado grande (máximo 1MB)");
@@ -424,8 +442,8 @@ public class MessageService {
                 .admins(new java.util.HashSet<>(java.util.List.of(creator)))
                 .build();
         
-        ChatGroup savedGroup = groupRepository.save(group);
 
+        
         // Mensaje de sistema: Creación del grupo
         Message creationMsg = Message.builder()
                 .sender(creator)
@@ -458,17 +476,17 @@ public class MessageService {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User requester = userRepository.findById(requesterId).orElseThrow();
         
-        // Solo administradores (o específicamente el creador) pueden eliminar el grupo
-        boolean isAdmin = group.getAdmins().contains(requester) || 
-                          (group.getCreator() != null && group.getCreator().getId().equals(requesterId));
 
+        boolean isAdmin = group.getAdmins().contains(requester) || 
+                          (group.getCreator() != null && group.get
+                
         if (!isAdmin) {
             throw new RuntimeException("Solo el administrador puede eliminar el grupo");
         }
 
         group.setDeleted(true);
         
-        // Mensaje de sistema: El administrador eliminó el grupo
+
         Message deleteMsg = Message.builder()
                 .sender(requester)
                 .receiver(requester) // Placeholder
@@ -498,12 +516,13 @@ public class MessageService {
 
         // Asegurar que el chat se mantenga en la lista con la actividad del mensaje de salida
         updateLastActivity(user, groupId, true, java.time.LocalDateTime.now());
+        // 
 
         boolean isCreator = group.getCreator() != null && group.getCreator().getId().equals(userId);
         
-        group.getMembers().remove(user);
+
         
-        // If the creator is leaving, transfer admin to the first remaining member
+
         if (isCreator && !group.getMembers().isEmpty()) {
             User newAdmin = group.getMembers().stream()
                     .min(Comparator.comparing(User::getId)) // First registered member
@@ -522,7 +541,7 @@ public class MessageService {
             }
         }
         
-        // If no members left, delete the group
+
         if (group.getMembers().isEmpty()) {
             List<Message> msgs = messageRepository.findByGroupOrderByCreatedAtAsc(group);
             messageRepository.deleteAll(msgs);
@@ -531,27 +550,28 @@ public class MessageService {
             groupRepository.save(group);
         }
     }
-    @Transactional
+    @
+
     public void removeFromGroup(Long groupId, Long memberId, Long adminId) {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User admin = userRepository.findById(adminId).orElseThrow();
         
-        // Solo administradores pueden eliminar miembros
-        boolean isAdmin = group.getAdmins().contains(admin) || 
-                          (group.getCreator() != null && group.getCreator().getId().equals(adminId));
 
+        boolean isAdmin = group.getAdmins().contains(admin) || 
+                          (group.getCreator() != null && group
+                
         if (!isAdmin) {
             throw new RuntimeException("Solo los administradores pueden eliminar miembros");
         }
         
-        if (memberId.equals(adminId)) {
+
             throw new RuntimeException("No puedes eliminarte a ti mismo. Usa 'Salir del grupo'.");
         }
 
         User memberToRemove = userRepository.findById(memberId).orElseThrow();
         group.getMembers().remove(memberToRemove);
         
-        // Mensaje de sistema
+
         Message sysMsg = Message.builder()
                 .sender(group.getCreator())
                 .receiver(memberToRemove)
@@ -569,8 +589,9 @@ public class MessageService {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User requester = userRepository.findById(requesterId).orElseThrow();
         
-        // Cualquier miembro puede añadir a otros (Requerimiento: "los miembros si pueden añadir a otras personas")
+
         if (!group.getMembers().contains(requester)) {
+        // 
             throw new RuntimeException("Debes ser miembro del grupo para añadir a otros");
         }
 
@@ -581,7 +602,7 @@ public class MessageService {
 
         group.getMembers().add(newMember);
         
-        // Mensaje de sistema
+
         Message sysMsg = Message.builder()
                 .sender(group.getCreator())
                 .receiver(newMember)
@@ -599,10 +620,10 @@ public class MessageService {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User requester = userRepository.findById(adminId).orElseThrow();
         
-        // Solo los administradores actuales pueden nombrar a otros administradores
-        boolean isRequesterAdmin = group.getAdmins().contains(requester) || 
-                                 (group.getCreator() != null && group.getCreator().getId().equals(adminId));
 
+        boolean isRequesterAdmin = group.getAdmins().contains(requester) || 
+                                 (group.getCreator() != null && group.getCr
+                
         if (!isRequesterAdmin) {
             throw new RuntimeException("Solo los administradores pueden nombrar nuevos administradores");
         }
@@ -614,7 +635,7 @@ public class MessageService {
 
         group.getAdmins().add(newAdmin);
         
-        // Mensaje de sistema
+
         Message sysMsg = Message.builder()
                 .sender(requester)
                 .receiver(newAdmin)
@@ -632,22 +653,22 @@ public class MessageService {
         ChatGroup group = groupRepository.findById(groupId).orElseThrow();
         User requester = userRepository.findById(adminId).orElseThrow();
         
-        boolean isRequesterAdmin = group.getAdmins().contains(requester) || 
-                                 (group.getCreator() != null && group.getCreator().getId().equals(adminId));
 
+                                 (group.getCreator() != null && group.getCr
+                
         if (!isRequesterAdmin) {
             throw new RuntimeException("Solo los administradores pueden degradar a otros");
         }
 
         User targetMember = userRepository.findById(memberId).orElseThrow();
         
-        if (group.getCreator() != null && group.getCreator().getId().equals(memberId)) {
+
             throw new RuntimeException("No se puede quitar el rango de administrador al creador");
         }
 
         group.getAdmins().remove(targetMember);
         
-        Message sysMsg = Message.builder()
+
                 .sender(requester)
                 .receiver(targetMember)
                 .group(group)
@@ -658,18 +679,23 @@ public class MessageService {
 
         groupRepository.save(group);
     }
-    private void createOrUpdateTaskMessage(User sender, User receiver, String content, java.time.LocalDateTime now, String taskIdPattern) {
-        java.util.List<Message> msgs = messageRepository.findExistingTaskMessages(sender.getId(), receiver.getId(), taskIdPattern);
+    p
+
+        java.util.List<Message> msgs = messageRepository.findExistingTaskMessages(sender.getId(), receiver.getId(),
+            taskIdPattern);
         Message msg;
+                
         if (!msgs.isEmpty()) {
             msg = msgs.get(0);
             msg.setContent(content);
             msg.setCreatedAt(now);
             msg.setRead(false);
             if (msg.getReadBy() != null) msg.getReadBy().clear();
-            if (msg.getDeletedBy() != null) msg.getDeletedBy().clear();
+            if (msg.getDeletedBy() != nu
+                l) msg.getDeletedBy().clear();
             
-            if (msgs.size() > 1) {
+                
+
                 messageRepository.deleteAll(msgs.subList(1, msgs.size()));
             }
         } else {
@@ -699,11 +725,12 @@ public class MessageService {
 
         if (manager == null) return;
 
+            
         String content = String.format("TASK_EVENT|%s|%d|%s|%s|%s", 
             actionType, task.getId(), task.getTitle(), 
-            (task.getAssignedTo() != null ? task.getAssignedTo().getName() : "Sin asignar"),
-            task.getPriority().name());
-
+                (task.getAssignedTo() != null ? task.getAs
+                task.getPriority().name());
+                
         java.time.LocalDateTime now = java.time.LocalDateTime.now();
         String taskIdPattern = "%|" + task.getId() + "|%";
 
@@ -714,9 +741,10 @@ public class MessageService {
 
         // Notify Employee if assigned, not the actor, and not the manager (already checked)
         if (task.getAssignedTo() != null && 
-            !task.getAssignedTo().getId().equals(actorId) && 
-            !task.getAssignedTo().getId().equals(manager.getId())) {
-            createOrUpdateTaskMessage(systemUser, task.getAssignedTo(), content, now, taskIdPattern);
+        // 
+            !task.getAssignedTo().getId().e
+                !task.getAssignedTo().getId().equals(manager.get
+                createOrUpdateTaskMessage(systemUser, task.getAssignedTo(), content, now, taskIdPattern);
         }
     }
 
@@ -728,22 +756,23 @@ public class MessageService {
 
     public java.util.Map<String, Integer> getNotificationBadges(Long userId, Long lastVisitedTasks, Long lastVisitedMessages) {
         User user = userRepository.findById(userId).orElseThrow();
+            
         
-        java.time.LocalDateTime lastVisitedT = java.time.Instant.ofEpochMilli(lastVisitedTasks)
+
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDateTime();
         
-        java.time.LocalDateTime lastVisitedM = java.time.Instant.ofEpochMilli(lastVisitedMessages)
+
                 .atZone(java.time.ZoneId.systemDefault())
                 .toLocalDateTime();
 
         int unreadMessages = (int) (messageRepository.countTotalUnreadPrivateMessagesSince(userId, lastVisitedM) + 
-                                   messageRepository.countTotalUnreadGroupMessagesSince(userId, user, lastVisitedM));
-        
-        int newTasks = (int) taskRepository.countByAssignedToIdAndStatusAndCreatedAtGreaterThan(
+                                   messageRepository.countTotalUnreadGroupMessagesSince(userId, user, lastVisitedM
+                
+
                 userId, TaskStatus.PENDIENTE, lastVisitedT);
         
-        java.util.Map<String, Integer> badges = new java.util.HashMap<>();
+
         badges.put("messages", unreadMessages);
         badges.put("tasks", newTasks);
         return badges;
